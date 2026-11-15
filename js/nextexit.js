@@ -358,9 +358,9 @@
     const g = gasHighlight(e), f = foodHighlight(e), r = has(e, "restroom");
     const nextEx = NX.list[NX.sel + 1];
     const rows = [
-      `<li><span class="nx-i">${icon("gas")}</span>${g ? g.map(o => `${h(o.n)}${o.side ? ` <small>(${o.side})</small>` : ""}`).join(", ") : "No gas"}</li>`,
-      `<li><span class="nx-i">${icon("food")}</span>${f ? h(f) : "No food"}</li>`,
-      `<li><span class="nx-i">${icon("restroom")}</span>${r ? "Restrooms" : "No restrooms"}</li>`,
+      `<li><span class="nx-i">${icon("gas")}</span><span class="nx-hlt">${g ? g.map(o => `${h(o.n)}${o.side ? ` <small>(${o.side})</small>` : ""}`).join(", ") : "No gas"}</span></li>`,
+      `<li><span class="nx-i">${icon("food")}</span><span class="nx-hlt">${f ? h(f) : "No food"}</span></li>`,
+      `<li><span class="nx-i">${icon("restroom")}</span><span class="nx-hlt">${r ? "Restrooms" : "No restrooms"}</span></li>`,
     ];
     const none = !e.places.length && !e.badges.length;
     return `${none ? `<p class="nx-none">No services at this exit.</p>` : `<ul class="nx-hl">${rows.join("")}</ul>`}
