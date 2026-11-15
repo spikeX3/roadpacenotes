@@ -7,13 +7,16 @@
 //
 // Data © OpenStreetMap contributors, available under the ODbL.
 
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile, readFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const OVERPASS = process.env.OVERPASS_URL || "https://overpass-api.de/api/interpreter";
 const UA = "roadpacenotes.com exits builder (+https://roadpacenotes.com)";
 const OUT = join(dirname(fileURLToPath(import.meta.url)), "..", "data", "exits.json");
+// Optional: set OVERPASS_CACHE=some/dir to save raw responses and reuse them on the
+// next run (handy when tuning the filters without re-querying Overpass).
+const CACHE = process.env.OVERPASS_CACHE || "";
 
 // Copied from index.html. [lat, lon, global mile]; 0 = Ontario CA, 1265 = Walla Walla.
 const ROUTE=[[34.06,-117.65,0],[34.15,-118.1,25],[34.33,-118.5,55],[34.8,-118.86,80],[34.94,-118.92,95],[35.3,-119.2,125],[36.0,-119.96,200],[36.25,-120.24,225],[36.62,-120.6,250],[37.1,-121.02,290],[37.95,-121.3,360],[38.58,-121.49,405],[38.68,-121.77,425],[39.15,-122.15,465],[40.18,-122.24,535],[40.59,-122.39,565],[40.78,-122.32,580],[41.15,-122.32,615],[41.31,-122.31,635],[41.42,-122.38,645],[41.73,-122.63,680],[42.07,-122.6,712],[42.19,-122.7,727],[42.39,-122.92,737],[42.41,-123.13,745],[42.44,-123.33,762],[42.7,-123.38,790],[43.22,-123.35,828],[44.05,-123.09,907],[44.63,-123.07,946],[44.94,-123.04,964],[45.25,-122.89,995],[45.38,-122.76,1012],[45.43,-122.57,1025],[45.55,-122.55,1035],[45.58,-122.12,1063],[45.7,-121.52,1095],[45.6,-121.18,1115],[45.67,-120.83,1135],[45.92,-119.34,1225],[46.08,-118.9,1245],[46.06,-118.34,1265]];
@@ -21,8 +24,12 @@ const ROUTE=[[34.06,-117.65,0],[34.15,-118.1,25],[34.33,-118.5,55],[34.8,-118.86
 const BOXES = 10;          // corridor split
 const PAD_KM = 3;          // bbox padding
 const NEAR_M = 1200;       // amenity search radius around a junction
-const MAX_OFF_MI = 2;      // drop exits farther than this from the ROUTE line
-const MERGE_MI = 1;        // merge same-ref junctions (both directions) within this
+// ROUTE is a coarse polyline: on long straight segments the real freeway can sit
+// ~8 mi off it (e.g. I-5 at Lost Hills), so a tight cutoff drops real exits. The
+// freeway-by-mile check (LEGS) is what keeps other roads out.
+const MAX_OFF_MI = 9;      // drop exits farther than this from the ROUTE line
+const MERGE_MI = 2.5;      // merge same-ref junctions (both directions) within this
+                           // (NB/SB nodes can project >1 mi apart on the coarse line)
 const PER_CAT = 6;         // places kept per category per exit
 const PAUSE_MS = 2000;
 
@@ -30,10 +37,10 @@ const FREEWAYS = ["I 5", "I 205", "I 84", "I 210", "CA 210"];
 // Which freeway the trip is on along each stretch of global miles. Keeps I-5's
 // downtown-Portland exits (and other crossing freeways inside a bbox) out.
 const LEGS = [
-  [0, 56, ["I 210", "CA 210"]],
-  [50, 1015, ["I 5"]],
-  [1008, 1040, ["I 205"]],
-  [1030, 1265, ["I 84"]],
+  [0, 56, ["I 210", "CA 210"]],     // Ontario → I-5 at Sylmar
+  [54.5, 1012.2, ["I 5"]],          // Sylmar → I-205 split at Tualatin (exit 288)
+  [1010, 1040, ["I 205"]],          // → I-84 at Portland
+  [1030, 1215, ["I 84"]],           // → US-730 at Umatilla (exit 168)
 ];
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -144,7 +151,12 @@ async function main() {
   for (let k = 0; k < bbs.length; k++) {
     const label = `box ${k + 1}/${bbs.length}`;
     console.log(`${label} ${bbs[k].join(",")}`);
-    const data = await overpass(queryFor(bbs[k]), label);
+    const cacheFile = CACHE && join(CACHE, `box-${bbs[k].join("_")}.json`);
+    let data = null;
+    if (cacheFile) { try { data = JSON.parse(await readFile(cacheFile, "utf8")); console.log("  (cached)"); } catch { data = null; } }
+    const fresh = !data;
+    if (fresh) data = await overpass(queryFor(bbs[k]), label);
+    if (fresh && cacheFile) { await mkdir(CACHE, { recursive: true }); await writeFile(cacheFile, JSON.stringify(data)); }
     let nj = 0, np = 0;
     for (const el of data.elements) {
       const t = el.tags || {};
@@ -164,7 +176,7 @@ async function main() {
       }
     }
     console.log(`  ${nj} junctions, ${np} places`);
-    if (k < bbs.length - 1) await sleep(PAUSE_MS);
+    if (fresh && k < bbs.length - 1) await sleep(PAUSE_MS);
   }
 
   // Junctions → candidate exits on the route.
