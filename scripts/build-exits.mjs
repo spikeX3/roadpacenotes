@@ -32,7 +32,7 @@ const FREEWAYS = ["I 5", "I 205", "I 84", "I 210", "CA 210"];
 // downtown-Portland exits (and other crossing freeways inside a bbox) out.
 const LEGS = [
   [0, 56, ["I 210", "CA 210"]],     // Ontario → I-5 at Sylmar
-  [54.5, 1012.2, ["I 5"]],          // Sylmar → I-205 split at Tualatin (exit 288)
+  [54.5, 1012.0, ["I 5"]],          // Sylmar → I-205 split at Tualatin (exit 288; 289 is past it)
   [1010, 1040, ["I 205"]],          // → I-84 at Portland
   [1030, 1215, ["I 84"]],           // → US-730 at Umatilla (exit 168)
 ];
