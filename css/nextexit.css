@@ -133,3 +133,4 @@ body.m-sheet .nx-pill,body.driving .nx-pill,body.mapmax .nx-pill,body.nx-open .n
 .nx-dv-txt .nx-dv-hl>span{display:inline-flex;align-items:center;gap:5px;min-width:0;overflow:hidden;text-overflow:ellipsis;opacity:1}
 .nx-dv-hl .nx-ic{width:18px;height:18px}
 .nx-hlt{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.nx-jumps [aria-current="true"]{border-color:var(--route);background:color-mix(in srgb,var(--route) 10%,var(--card))}

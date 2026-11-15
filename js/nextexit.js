@@ -202,17 +202,40 @@
     const when = dist == null ? "" : dist < 0.3 ? " now" : ` in ${dist < 0.95 ? dist.toFixed(1) : Math.round(dist)} mile${Math.round(dist) === 1 ? "" : "s"}`;
     return `${name}${when}: ${parts.length ? parts.join(", ") : "no services"}.`;
   }
+  /* "Next gas": one rule shared by the tank tip and the Next gas button, so they always agree.
+     From position x (local miles, which already increase in the travel direction R.dir), take
+     the nearer of
+       (a) the first exit ahead with at least one OSM gas place, and
+       (b) the first of the app's own fuel stops ahead (R.stops with cat costco/fuel).
+     A fuel stop within 1 mi of that exit counts as the same stop (it's named, e.g.
+     "Costco Woodland (Exit 537)"). Distance is measured along the route: target − x.
+     The button jumps to the exit (for an app stop: the exit nearest to it, within 2 mi). */
+  function nextGas(x = here().x) {
+    const exit = NX.list.find(e => e.x > x + 0.1 && has(e, "gas")) || null;
+    const stop = (R.stops || []).filter(s => (s.cat === "costco" || s.cat === "fuel") && s.local > x + 0.1)
+      .sort((a, b) => a.local - b.local)[0] || null;
+    if (!exit && !stop) return null;
+    if (stop && (!exit || stop.local < exit.x - 1)) {
+      const near = NX.list.filter(e => Math.abs(e.x - stop.local) <= 2)
+        .sort((a, b) => Math.abs(a.x - stop.local) - Math.abs(b.x - stop.local))[0] || null;
+      return { dist: stop.local - x, label: stop.name, exit: near };
+    }
+    const same = stop && Math.abs(stop.local - exit.x) <= 1 ? stop.name : null;
+    return { dist: exit.x - x, label: same ? `${same} (${exitTitle(exit)})` : exitTitle(exit), exit };
+  }
+  function nextGasText(ng) { return ng ? `Next gas: ${ng.label}, ${fmtMi(ng.dist)}.` : "No more gas on the route."; }
+
   function fuelTip(e) {
     if (!FUEL || typeof FUEL.tankAt !== "function") return "";
     const tank = Math.max(0, FUEL.tankAt(e.x)), range = Math.max(0, (tank - RESERVE) * S.mpg);
-    const i = NX.list.indexOf(e), nextGas = NX.list.slice(i + 1).find(o => has(o, "gas"));
-    const gap = nextGas ? nextGas.x - e.x : null;
-    const tk = `Tank ≈${Math.round(tank)} gal`;
-    if (has(e, "gas")) {
-      if (tank < TANK * 0.35 || (gap != null && range < gap + 15)) return `${tk}: fill here${gap != null ? `. Next gas in ${Math.round(gap)} mi.` : "."}`;
-      return `${tk} (≈${Math.round(range)} mi of range): no need to stop.`;
-    }
-    return gap != null ? `${tk}. Next gas in ${Math.round(gap)} mi.` : `${tk}. No more gas on the route.`;
+    // whether to fill at *this* exit depends on the gap to the gas after it
+    const i = NX.list.indexOf(e), after = NX.list.slice(i + 1).find(o => has(o, "gas"));
+    const gap = after ? after.x - e.x : null;
+    const tk = `Tank at this exit ≈${Math.round(tank)} gal`;
+    const verdict = !has(e, "gas") ? `${tk}.`
+      : (tank < TANK * 0.35 || (gap != null && range < gap + 15)) ? `${tk}: fill here.`
+      : `${tk} (≈${Math.round(range)} mi of range): no need to stop.`;
+    return `${verdict} ${nextGasText(nextGas())}`;
   }
 
   /* ---------- DOM ---------- */
@@ -325,13 +348,15 @@
     NX.sel = n; renderPanel();
     const s = q("#nx-panel .nx-sign"); if (s) s.focus();
   }
-  function jumpTarget(cat) {
-    const pos = here(), sel = NX.list[NX.sel];
-    const cands = NX.list.filter(e => e.x > pos.x + 0.1 && has(withBadges(e), cat));
-    if (!cands.length) return null;
-    if (sel && cands.includes(sel)) return cands[cands.indexOf(sel) + 1] || null;
-    return cands.find(e => !sel || e.x > sel.x) || cands[0];
+  // Jump targets are measured from the current position, like the tank tip, so the button's
+  // distance and the tip's "Next gas" always match. Gas uses the shared nextGas() rule.
+  function jumpInfo(cat) {
+    const pos = here();
+    if (cat === "gas") { const ng = nextGas(pos.x); return ng ? { exit: ng.exit, dist: ng.dist } : null; }
+    const e = NX.list.find(o => o.x > pos.x + 0.1 && has(withBadges(o), cat));
+    return e ? { exit: e, dist: e.x - pos.x } : null;
   }
+  function jumpTarget(cat) { const j = jumpInfo(cat); return j && j.exit; }
   function jump(cat) {
     const t = jumpTarget(cat);
     if (!t) { setMsg(`No more ${CAT[cat].t.toLowerCase()} ahead on this trip.`); return; }
@@ -375,8 +400,8 @@
     const badges = e.badges.map(b => `<li class="nx-b ${h(b.k)}"><b>${h(b.t)}</b>${b.k !== "story" && b.d ? ` <span>${h(b.d)}</span>` : ""}${b.k === "story" ? `<p>${h(b.d)}</p>` : ""}</li>`).join("");
     const tip = fuelTip(e);
     const jumps = JUMPS.map(([cat, t]) => {
-      const tg = jumpTarget(cat);
-      return `<button type="button" data-jump="${cat}" ${tg ? "" : "aria-disabled=\"true\""}><span class="nx-jt">${icon(cat)}${t}</span><small>${tg ? fmtMi(tg.x - pos.x) : "none"}</small></button>`;
+      const j = jumpInfo(cat), on = j && j.exit && NX.list.indexOf(j.exit) === NX.sel;
+      return `<button type="button" data-jump="${cat}" ${j && j.exit ? "" : "aria-disabled=\"true\""}${on ? " aria-current=\"true\"" : ""}><span class="nx-jt">${icon(cat)}${t}</span><small>${j ? fmtMi(j.dist) : "none"}</small></button>`;
     }).join("");
     let rows = "";
     CATS.forEach(([cat, t]) => {
