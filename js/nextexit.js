@@ -69,7 +69,7 @@
       if (d && d.spot && near(SPOTS[d.spot][1])) out.push({ k: "camp", t: "Tonight's stop", d: shortName(d.spot) });
       PASSES.filter(p => R.inR(p.g) && near(p.g)).forEach(p => {
         const [k, v] = passVerdict(p, (S.passLv && S.passLv[p.n]) || "clear");
-        out.push({ k: "pass " + k, t: `${p.n.replace(/ \(.*\)/, "")}: ${v}`, d: `${p.el.toLocaleString()} ft` });
+        out.push({ k: "pass " + k, t: `${p.n.replace(/ \(.*\)/, "")}: ${v}`, d: p.el ? `${p.el.toLocaleString()} ft` : "" });
       });
       TOUR.filter(f => R.inR(f[0]) && near(f[0])).forEach(f => out.push({ k: "story", t: `Story: ${f[1]}`, d: f[2] }));
     } catch (err) { console.warn("Next Exit: badge error", err); }
@@ -124,7 +124,8 @@
     const g = e.places.filter(p => p.category === "gas");
     if (!g.length) return null;
     const seen = new Set(), names = [];
-    g.forEach(p => { const n = p.brand || p.name || "Gas"; if (!seen.has(n)) { seen.add(n); names.push({ n, side: p.side }); } });
+    g.filter(p => p.brand || p.name).forEach(p => { const n = p.brand || p.name; if (!seen.has(n)) { seen.add(n); names.push({ n, side: p.side }); } });
+    if (!names.length) names.push({ n: "Gas", side: g[0].side });
     return names.slice(0, 2);
   }
   function foodHighlight(e) { const f = e.places.find(p => p.category === "food"); return f ? label(f) : null; }
@@ -291,7 +292,7 @@
     const g = gasHighlight(e), f = foodHighlight(e), r = has(e, "restroom");
     const nextEx = NX.list[NX.sel + 1];
     const rows = [
-      `<li><span class="nx-i" aria-hidden="true">⛽</span>${g ? g.map(o => `${h(o.n)} <small>${o.side ? o.side : ""}</small>`).join(", ") : "No gas"}</li>`,
+      `<li><span class="nx-i" aria-hidden="true">⛽</span>${g ? g.map(o => `${h(o.n)}${o.side ? ` <small>(${o.side})</small>` : ""}`).join(", ") : "No gas"}</li>`,
       `<li><span class="nx-i" aria-hidden="true">🍔</span>${f ? h(f) : "No food"}</li>`,
       `<li><span class="nx-i" aria-hidden="true">🚻</span>${r ? "Restrooms" : "No restrooms"}</li>`,
     ];
