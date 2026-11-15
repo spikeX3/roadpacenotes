@@ -118,3 +118,17 @@ body.m-sheet .nx-pill,body.driving .nx-pill,body.mapmax .nx-pill,body.nx-open .n
 .nx-dv-txt .nx-dv-hl{opacity:1}
 .nx-dv-say{flex:none;width:56px;border-radius:16px;border:1px solid var(--rule,#24323b);background:var(--card,#111a21);color:inherit;font-size:1.4rem;cursor:pointer}
 .nx-dv button:focus-visible{outline:3px solid var(--hi);outline-offset:2px}
+
+/* ---------- line icons ---------- */
+.nx-ic{width:1.15em;height:1.15em;flex:none;vertical-align:-.22em}
+.nx-cat h3{display:flex;align-items:center;gap:6px}
+.nx-cat h3 .nx-ic{width:18px;height:18px;color:var(--ink)}
+.nx-jt{display:inline-flex;align-items:center;gap:5px}
+.nx-jt .nx-ic{width:18px;height:18px}
+.nx-i .nx-ic{width:28px;height:28px;color:var(--sign);vertical-align:middle}
+.nx-btn{gap:8px}.nx-btn .nx-ic{width:26px;height:26px}
+.nx-btn.say .nx-ic{width:30px;height:30px}
+.nx-dv-say .nx-ic{width:28px;height:28px}
+.nx-dv-txt .nx-dv-hl{display:flex;gap:4px 12px;overflow:hidden;white-space:nowrap}
+.nx-dv-txt .nx-dv-hl>span{display:inline-flex;align-items:center;gap:5px;min-width:0;overflow:hidden;text-overflow:ellipsis;opacity:1}
+.nx-dv-hl .nx-ic{width:18px;height:18px}

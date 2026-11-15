@@ -8,11 +8,25 @@
   "use strict";
   if (typeof R === "undefined" || typeof ROUTE === "undefined") { console.warn("Next Exit: app globals missing; not starting."); return; }
 
+  // 24×24 line icons in the style of the app's tab bar (stroke = currentColor).
+  const ICON_PATHS = {
+    gas: '<path d="M4 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16M3 21h12M6 9h6"/><path d="M14 10h2a2 2 0 0 1 2 2v4a1.5 1.5 0 0 0 3 0V8l-3-3"/>',
+    food: '<path d="M7 3v8M5 3v5a2 2 0 0 0 4 0V3M7 11v10M17 3c-2 1-3 4-3 7 0 2 1 3 3 3v8"/>',
+    coffee: '<path d="M4 9h12v4a6 6 0 0 1-6 6h0a6 6 0 0 1-6-6z"/><path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16M8 3v3M12 3v3M4 21h12"/>',
+    restroom: '<circle cx="7" cy="4.5" r="1.8"/><circle cx="17" cy="4.5" r="1.8"/><path d="M7 9v12M4.5 9h5M17 9l-3 7h6l-3-7M17 16v5M12 3v18"/>',
+    ev: '<path d="M13 2 5 14h6l-1 8 8-12h-6z"/>',
+    lodging: '<path d="M3 19V6M3 15h18v4M21 15v-3a3 3 0 0 0-3-3h-7v6"/><circle cx="7" cy="11.5" r="2"/>',
+    sight: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+    grocery: '<path d="M3 4h2l2.4 11h10.2L20 8H6.2"/><circle cx="9" cy="19.5" r="1.5"/><circle cx="17" cy="19.5" r="1.5"/>',
+    speak: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>',
+    nav: '<path d="M3 11 21 3l-8 18-2-8z"/>',
+  };
+  const icon = (k, cls = "nx-ic") => `<svg class="${cls}" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${ICON_PATHS[k]}</svg>`;
   const CATS = [
-    ["gas", "Gas", "⛽"], ["food", "Food", "🍔"], ["coffee", "Coffee", "☕"], ["restroom", "Restrooms", "🚻"],
-    ["ev", "EV charging", "⚡"], ["lodging", "Lodging", "🛏️"], ["sight", "Sights", "📷"], ["grocery", "Groceries", "🛒"],
+    ["gas", "Gas"], ["food", "Food"], ["coffee", "Coffee"], ["restroom", "Restrooms"],
+    ["ev", "EV charging"], ["lodging", "Lodging"], ["sight", "Sights"], ["grocery", "Groceries"],
   ];
-  const CAT = Object.fromEntries(CATS.map(c => [c[0], { t: c[1], i: c[2] }]));
+  const CAT = Object.fromEntries(CATS.map(c => [c[0], { t: c[1] }]));
   const JUMPS = [["gas", "Next gas"], ["food", "Next food"], ["restroom", "Next restroom"]];
   const SIDE = { E: "east side", W: "west side", N: "north side", S: "south side" };
   const BADGE_MI = 2, GPS_MAX_OFF = 15, GPS_STALE_MS = 120000, DRIVER_SPEED = 4.5;
@@ -330,16 +344,16 @@
     const g = gasHighlight(e), f = foodHighlight(e), r = has(e, "restroom");
     const nextEx = NX.list[NX.sel + 1];
     const rows = [
-      `<li><span class="nx-i" aria-hidden="true">⛽</span>${g ? g.map(o => `${h(o.n)}${o.side ? ` <small>(${o.side})</small>` : ""}`).join(", ") : "No gas"}</li>`,
-      `<li><span class="nx-i" aria-hidden="true">🍔</span>${f ? h(f) : "No food"}</li>`,
-      `<li><span class="nx-i" aria-hidden="true">🚻</span>${r ? "Restrooms" : "No restrooms"}</li>`,
+      `<li><span class="nx-i">${icon("gas")}</span>${g ? g.map(o => `${h(o.n)}${o.side ? ` <small>(${o.side})</small>` : ""}`).join(", ") : "No gas"}</li>`,
+      `<li><span class="nx-i">${icon("food")}</span>${f ? h(f) : "No food"}</li>`,
+      `<li><span class="nx-i">${icon("restroom")}</span>${r ? "Restrooms" : "No restrooms"}</li>`,
     ];
     const none = !e.places.length && !e.badges.length;
     return `${none ? `<p class="nx-none">No services at this exit.</p>` : `<ul class="nx-hl">${rows.join("")}</ul>`}
       <div class="nx-big">
-        <a class="nx-btn go" href="${nav(e.lat, e.lon)}" target="_blank" rel="noopener">Navigate</a>
+        <a class="nx-btn go" href="${nav(e.lat, e.lon)}" target="_blank" rel="noopener">${icon("nav")}<span>Navigate</span></a>
         <button type="button" class="nx-btn" data-step="1" ${nextEx ? "" : "disabled"}>Next ›</button>
-        <button type="button" class="nx-btn say" data-say aria-label="Read this exit aloud">🔊</button>
+        <button type="button" class="nx-btn say" data-say aria-label="Read this exit aloud">${icon("speak")}</button>
       </div>`;
   }
 
@@ -348,12 +362,12 @@
     const tip = fuelTip(e);
     const jumps = JUMPS.map(([cat, t]) => {
       const tg = jumpTarget(cat);
-      return `<button type="button" data-jump="${cat}" ${tg ? "" : "aria-disabled=\"true\""}>${t}<small>${tg ? fmtMi(tg.x - pos.x) : "none"}</small></button>`;
+      return `<button type="button" data-jump="${cat}" ${tg ? "" : "aria-disabled=\"true\""}><span class="nx-jt">${icon(cat)}${t}</span><small>${tg ? fmtMi(tg.x - pos.x) : "none"}</small></button>`;
     }).join("");
     let rows = "";
-    CATS.forEach(([cat, t, icon]) => {
+    CATS.forEach(([cat, t]) => {
       const ps = e.places.filter(p => p.category === cat); if (!ps.length) return;
-      rows += `<section class="nx-cat"><h3><span aria-hidden="true">${icon}</span> ${t} <small>${ps.length}</small></h3><ul>${ps.map(p => place(p)).join("")}</ul></section>`;
+      rows += `<section class="nx-cat"><h3>${icon(cat)} ${t} <small>${ps.length}</small></h3><ul>${ps.map(p => place(p)).join("")}</ul></section>`;
     });
     const gpsBtn = pos.src !== "gps" && navigator.geolocation ? `<button type="button" class="nx-link" data-gps>Use my location</button>` : "";
     return `${badges ? `<ul class="nx-badges">${badges}</ul>` : ""}
@@ -397,11 +411,11 @@
     if (!e) { card.hidden = true; return; }
     card.hidden = false; card.dataset.i = i;
     const d = e.x - pos.x, g = gasHighlight(e), f = foodHighlight(e), r = has(e, "restroom");
-    const hl = [g ? "⛽ " + g.map(o => o.n).join(", ") : "", f ? "🍔 " + f : "", r ? "🚻 Restrooms" : ""].filter(Boolean);
+    const hl = [g ? icon("gas") + h(g.map(o => o.n).join(", ")) : "", f ? icon("food") + h(f) : "", r ? icon("restroom") + "Restrooms" : ""].filter(Boolean);
     card.innerHTML = `<button type="button" class="nx-dv-main" data-nxopen aria-label="${h(exitTitle(e))}, ${fmtMi(d)}. Open exit details.">
         <span class="nx-dv-sign"><small>NEXT EXIT</small><b>${h(e.ref || "—")}</b></span>
-        <span class="nx-dv-txt"><b>${fmtMi(d)} · ${fmtMin(d)}</b><span>${h(e.name || "")}</span><span class="nx-dv-hl">${hl.length ? h(hl.join(" · ")) : "No services"}</span></span>
-      </button><button type="button" class="nx-dv-say" data-nxsay aria-label="Read the next exit aloud">🔊</button>`;
+        <span class="nx-dv-txt"><b>${fmtMi(d)} · ${fmtMin(d)}</b><span>${h(e.name || "")}</span><span class="nx-dv-hl">${hl.length ? hl.map(x => `<span>${x}</span>`).join("") : "No services"}</span></span>
+      </button><button type="button" class="nx-dv-say" data-nxsay aria-label="Read the next exit aloud">${icon("speak")}</button>`;
   }
 
   /* ---------- hook into the app ---------- */
