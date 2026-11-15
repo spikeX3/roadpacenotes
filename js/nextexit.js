@@ -16,10 +16,12 @@
   const JUMPS = [["gas", "Next gas"], ["food", "Next food"], ["restroom", "Next restroom"]];
   const SIDE = { E: "east side", W: "west side", N: "north side", S: "south side" };
   const BADGE_MI = 2, GPS_MAX_OFF = 15, GPS_STALE_MS = 120000, DRIVER_SPEED = 4.5;
+  const TAP_WINDOW_MS = 10 * 60 * 1000; // high-accuracy GPS for this long after the pill is tapped
 
   const NX = {
     data: null, list: [], sel: -1, open: false, mode: null /* manual 'driver'|'passenger' */,
     gps: null, watch: null, lastFocus: null, built: false,
+    watchHi: null, allowed: false, paused: false, tapAt: 0, tapTimer: null, ask: false,
   };
   window.NEXTEXIT = NX; // handy for debugging in the console
 
@@ -93,24 +95,58 @@
   }
   function nextIndex(x) { const i = NX.list.findIndex(e => e.x > x + 0.1); return i; }
 
-  async function maybeStartGPS(ask) {
-    if (NX.watch != null || !navigator.geolocation) return;
-    if (!ask) {
-      try {
-        if (!navigator.permissions) return;
-        const st = await navigator.permissions.query({ name: "geolocation" });
-        if (st.state !== "granted") return;
-      } catch (e) { return; }
-    }
+  /* GPS, easy on the battery:
+     - never prompts by itself; watches only once location is allowed (or the user taps "Use my location")
+     - high accuracy only while the panel or drive mode is open, or for 10 minutes after the pill is tapped;
+       otherwise a low-accuracy watch that accepts fixes up to a minute old
+     - stops while the page is hidden and resumes when it's visible again (if still allowed) */
+  function wantHigh() { return NX.open || (typeof DRV !== "undefined" && DRV.on) || Date.now() - NX.tapAt < TAP_WINDOW_MS; }
+  async function permitted() {
+    try {
+      if (!navigator.permissions) return NX.allowed;
+      const st = await navigator.permissions.query({ name: "geolocation" });
+      return st.state === "granted";
+    } catch (e) { return NX.allowed; }
+  }
+  function stopWatch() {
+    if (NX.watch != null) navigator.geolocation.clearWatch(NX.watch);
+    NX.watch = null; NX.watchHi = null;
+  }
+  function startWatch() {
+    if (!navigator.geolocation || document.hidden) return;
+    const hi = wantHigh();
+    if (NX.watch != null && NX.watchHi === hi) return;
+    stopWatch();
+    NX.watchHi = hi;
     NX.watch = navigator.geolocation.watchPosition(p => {
+      NX.allowed = true;
       const r = gFromLatLon(p.coords.latitude, p.coords.longitude);
       NX.gps = { g: r.g, d: r.d, t: Date.now(), speed: p.coords.speed, lat: p.coords.latitude, lon: p.coords.longitude };
       refresh();
     }, err => {
-      if (ask) setMsg(err.code === 1 ? "Location permission was denied." : "Couldn't get a GPS fix.");
-      if (err.code === 1) { navigator.geolocation.clearWatch(NX.watch); NX.watch = null; }
-    }, { enableHighAccuracy: true, maximumAge: 15000, timeout: 30000 });
+      if (NX.ask) setMsg(err.code === 1 ? "Location permission was denied." : "Couldn't get a GPS fix.");
+      if (err.code === 1) { NX.allowed = false; stopWatch(); }
+    }, hi ? { enableHighAccuracy: true, maximumAge: 15000, timeout: 30000 }
+          : { enableHighAccuracy: false, maximumAge: 60000, timeout: 120000 });
   }
+  async function maybeStartGPS(ask) {
+    if (!navigator.geolocation) return;
+    NX.ask = !!ask;
+    if (!ask && !(await permitted())) return;
+    startWatch();
+  }
+  // Switch between high and low accuracy when the reason for high accuracy starts or ends.
+  function retuneGPS() { if (NX.watch != null) startWatch(); }
+  function notePillTap() {
+    NX.tapAt = Date.now();
+    clearTimeout(NX.tapTimer);
+    NX.tapTimer = setTimeout(retuneGPS, TAP_WINDOW_MS + 1000);
+    retuneGPS();
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { if (NX.watch != null) { stopWatch(); NX.paused = true; } }
+    else if (NX.paused) { NX.paused = false; maybeStartGPS(false); }
+  });
   function setMsg(t) { const m = q("#nx-msg"); if (m) m.textContent = t; }
 
   /* ---------- driver / passenger ---------- */
@@ -156,7 +192,7 @@
     if (NX.built) return; NX.built = true;
     const pill = document.createElement("button");
     pill.type = "button"; pill.id = "nx-pill"; pill.className = "nx-pill"; pill.hidden = true;
-    pill.addEventListener("click", () => openPanel());
+    pill.addEventListener("click", () => { notePillTap(); openPanel(); });
     document.body.appendChild(pill);
 
     const back = document.createElement("div"); back.className = "nx-back"; back.hidden = true;
@@ -239,6 +275,7 @@
     NX.open = true;
     q("#nx-panel").hidden = false; q(".nx-back").hidden = false;
     document.body.classList.add("nx-open");
+    retuneGPS();
     renderPanel();
     requestAnimationFrame(() => { const p = q("#nx-panel"); (p.querySelector(".nx-sign") || p).focus(); });
   }
@@ -247,6 +284,7 @@
     NX.open = false; NX.mode = null; // manual driver/passenger choice lasts until the panel closes
     q("#nx-panel").hidden = true; q(".nx-back").hidden = true;
     document.body.classList.remove("nx-open");
+    retuneGPS();
     setMsg("");
     const f = NX.lastFocus; NX.lastFocus = null;
     if (f && document.contains(f) && f.offsetParent !== null) f.focus();
@@ -377,9 +415,9 @@
   const _driveAt = driveAt;
   driveAt = function (x, pos) { _driveAt(x, pos); try { renderDrive(x); } catch (e) { console.warn("Next Exit:", e); } };
   const _openDrive = openDrive;
-  openDrive = async function (...a) { const r = await _openDrive.apply(this, a); try { renderPill(); renderDrive(DRV.x); } catch (e) { console.warn("Next Exit:", e); } return r; };
+  openDrive = async function (...a) { const r = await _openDrive.apply(this, a); try { retuneGPS(); renderPill(); renderDrive(DRV.x); } catch (e) { console.warn("Next Exit:", e); } return r; };
   const _closeDrive = closeDrive;
-  closeDrive = function (...a) { const r = _closeDrive.apply(this, a); try { refresh(); } catch (e) { } return r; };
+  closeDrive = function (...a) { const r = _closeDrive.apply(this, a); try { retuneGPS(); refresh(); } catch (e) { } return r; };
   wrap("rebuild", refresh);
   wrap("applyMDay", () => { if (!NX.open) renderPill(); });
   wrap("selectDay", () => { if (!NX.open) renderPill(); });
