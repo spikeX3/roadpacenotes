@@ -45,7 +45,21 @@
   const fmtMi = m => { m = Math.abs(m); return m < 0.95 ? `${m.toFixed(1)} mi` : `${Math.round(m)} mi`; };
   const fmtMin = m => { const t = Math.max(1, Math.round(Math.abs(m) / MPH * 60)); return t < 60 ? `≈${t} min` : `≈${Math.floor(t / 60)} h ${String(t % 60).padStart(2, "0")} min`; };
   const nav = (lat, lon) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`;
-  const label = p => p.name || p.brand || CAT[p.category].t;
+  // Names for places OSM left unnamed: brand if it's a real one (not "B"), otherwise
+  // "{kind} · {side} side", plus opening hours when known.
+  const KIND = {
+    gas: "Gas station", coffee: "Café", restroom: "Restroom", ev: "EV charger",
+    food: { fast_food: "Fast food", restaurant: "Restaurant", _: "Restaurant" },
+    lodging: { hotel: "Hotel", motel: "Motel", _: "Lodging" },
+    sight: { attraction: "Attraction", viewpoint: "Viewpoint", museum: "Museum", _: "Sight" },
+    grocery: { supermarket: "Supermarket", convenience: "Convenience store", _: "Store" },
+  };
+  const goodBrand = b => (typeof b === "string" && b.trim().length > 1 && /[\p{L}\p{N}]/u.test(b)) ? b.trim() : null; // "76", "A&W" ok; "B" not
+  const kindName = p => { const k = KIND[p.category]; return typeof k === "string" ? k : (k && (k[p.kind] || k._)) || CAT[p.category].t; };
+  const hoursText = o => o === "24/7" ? "Open 24/7" : o;
+  const isAnon = p => !p.name && !goodBrand(p.brand);
+  const label = p => p.name || goodBrand(p.brand) ||
+    [kindName(p), p.side && SIDE[p.side], p.opening_hours && hoursText(p.opening_hours)].filter(Boolean).join(" · ");
   const exitTitle = e => e.ref ? `Exit ${e.ref}` : (e.name || "Exit");
   const has = (e, cat) => e.places.some(p => p.category === cat) || (cat === "restroom" && e.badges && e.badges.some(b => b.k === "rest"));
 
@@ -174,8 +188,8 @@
     const g = e.places.filter(p => p.category === "gas");
     if (!g.length) return null;
     const seen = new Set(), names = [];
-    g.filter(p => p.brand || p.name).forEach(p => { const n = p.brand || p.name; if (!seen.has(n)) { seen.add(n); names.push({ n, side: p.side }); } });
-    if (!names.length) names.push({ n: "Gas", side: g[0].side });
+    g.filter(p => !isAnon(p)).forEach(p => { const n = goodBrand(p.brand) || p.name; if (!seen.has(n)) { seen.add(n); names.push({ n, side: p.side }); } });
+    if (!names.length) names.push({ n: "Gas station", side: g[0].side });
     return names.slice(0, 2);
   }
   function foodHighlight(e) { const f = e.places.find(p => p.category === "food"); return f ? label(f) : null; }
@@ -379,11 +393,12 @@
 
   function place(p) {
     const sub = [];
-    if (p.brand && p.name && p.brand !== p.name) sub.push(h(p.brand));
+    const anon = isAnon(p), brand = goodBrand(p.brand);
+    if (brand && p.name && brand !== p.name) sub.push(h(brand));
     sub.push(`${fmtMi(p.dist)} from exit`);
-    if (p.side) sub.push(SIDE[p.side] || p.side);
+    if (p.side && !anon) sub.push(SIDE[p.side] || p.side); // unnamed places already say the side
     if (p.diesel === "yes") sub.push("diesel");
-    const hours = p.opening_hours ? `<span class="nx-hours">${h(p.opening_hours === "24/7" ? "Open 24/7" : p.opening_hours)}</span>` : "";
+    const hours = p.opening_hours && !anon ? `<span class="nx-hours">${h(hoursText(p.opening_hours))}</span>` : "";
     let links = `<a href="${nav(p.lat, p.lon)}" target="_blank" rel="noopener" aria-label="Directions to ${h(label(p))}">Map</a>`;
     if (p.category === "gas") {
       links += `<a href="https://www.gasbuddy.com/home?search=${encodeURIComponent(`${p.lat},${p.lon}`)}&fuel=1" target="_blank" rel="noopener" aria-label="Check price on GasBuddy">GasBuddy</a><a href="https://www.google.com/maps/search/gas+prices/@${p.lat},${p.lon},15z" target="_blank" rel="noopener" aria-label="Check gas prices on Google Maps">Prices</a>`;
