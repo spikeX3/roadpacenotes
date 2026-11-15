@@ -87,9 +87,14 @@ export async function overpass(query, { label = "query", url = process.env.OVERP
     if (status === 200) {
       try {
         const data = JSON.parse(text);
+        // Overpass reports timeouts / memory limits as HTTP 200 with a "remark" and
+        // missing or partial elements: treat that as a failure, retry, never cache it.
+        if (data.remark && /runtime error|timed out|out of memory/i.test(data.remark)) {
+          text = data.remark; throw new Error(data.remark);
+        }
         if (cacheFile) { await mkdir(cacheDir, { recursive: true }); await writeFile(cacheFile, JSON.stringify(data)); }
         return { data, fresh: true };
-      } catch { /* truncated body: retry */ }
+      } catch { status = 200; /* truncated body or runtime error: retry */ }
     }
     if (![0, 200, 429, 502, 503, 504].includes(status) || attempt >= 6) throw new Error(`${label}: HTTP ${status} ${text.slice(0, 300)}`);
     console.warn(`  ${label}: HTTP ${status}, retrying in ${wait / 1000}s`);
