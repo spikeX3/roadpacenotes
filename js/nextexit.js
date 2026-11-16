@@ -8,18 +8,34 @@
   "use strict";
   if (typeof R === "undefined" || typeof ROUTE === "undefined") { console.warn("Next Exit: app globals missing; not starting."); return; }
 
+  // 24×24 line icons in the style of the app's tab bar (stroke = currentColor).
+  const ICON_PATHS = {
+    gas: '<path d="M4 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16M3 21h12M6 9h6"/><path d="M14 10h2a2 2 0 0 1 2 2v4a1.5 1.5 0 0 0 3 0V8l-3-3"/>',
+    food: '<path d="M7 3v8M5 3v5a2 2 0 0 0 4 0V3M7 11v10M17 3c-2 1-3 4-3 7 0 2 1 3 3 3v8"/>',
+    coffee: '<path d="M4 9h12v4a6 6 0 0 1-6 6h0a6 6 0 0 1-6-6z"/><path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16M8 3v3M12 3v3M4 21h12"/>',
+    restroom: '<circle cx="7" cy="4.5" r="1.8"/><circle cx="17" cy="4.5" r="1.8"/><path d="M7 9v12M4.5 9h5M17 9l-3 7h6l-3-7M17 16v5M12 3v18"/>',
+    ev: '<path d="M13 2 5 14h6l-1 8 8-12h-6z"/>',
+    lodging: '<path d="M3 19V6M3 15h18v4M21 15v-3a3 3 0 0 0-3-3h-7v6"/><circle cx="7" cy="11.5" r="2"/>',
+    sight: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+    grocery: '<path d="M3 4h2l2.4 11h10.2L20 8H6.2"/><circle cx="9" cy="19.5" r="1.5"/><circle cx="17" cy="19.5" r="1.5"/>',
+    speak: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>',
+    nav: '<path d="M3 11 21 3l-8 18-2-8z"/>',
+  };
+  const icon = (k, cls = "nx-ic") => `<svg class="${cls}" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${ICON_PATHS[k]}</svg>`;
   const CATS = [
-    ["gas", "Gas", "⛽"], ["food", "Food", "🍔"], ["coffee", "Coffee", "☕"], ["restroom", "Restrooms", "🚻"],
-    ["ev", "EV charging", "⚡"], ["lodging", "Lodging", "🛏️"], ["sight", "Sights", "📷"], ["grocery", "Groceries", "🛒"],
+    ["gas", "Gas"], ["food", "Food"], ["coffee", "Coffee"], ["restroom", "Restrooms"],
+    ["ev", "EV charging"], ["lodging", "Lodging"], ["sight", "Sights"], ["grocery", "Groceries"],
   ];
-  const CAT = Object.fromEntries(CATS.map(c => [c[0], { t: c[1], i: c[2] }]));
+  const CAT = Object.fromEntries(CATS.map(c => [c[0], { t: c[1] }]));
   const JUMPS = [["gas", "Next gas"], ["food", "Next food"], ["restroom", "Next restroom"]];
   const SIDE = { E: "east side", W: "west side", N: "north side", S: "south side" };
   const BADGE_MI = 2, GPS_MAX_OFF = 15, GPS_STALE_MS = 120000, DRIVER_SPEED = 4.5;
+  const TAP_WINDOW_MS = 10 * 60 * 1000; // high-accuracy GPS for this long after the pill is tapped
 
   const NX = {
     data: null, list: [], sel: -1, open: false, mode: null /* manual 'driver'|'passenger' */,
     gps: null, watch: null, lastFocus: null, built: false,
+    watchHi: null, allowed: false, paused: false, tapAt: 0, tapTimer: null, ask: false,
   };
   window.NEXTEXIT = NX; // handy for debugging in the console
 
@@ -29,7 +45,21 @@
   const fmtMi = m => { m = Math.abs(m); return m < 0.95 ? `${m.toFixed(1)} mi` : `${Math.round(m)} mi`; };
   const fmtMin = m => { const t = Math.max(1, Math.round(Math.abs(m) / MPH * 60)); return t < 60 ? `≈${t} min` : `≈${Math.floor(t / 60)} h ${String(t % 60).padStart(2, "0")} min`; };
   const nav = (lat, lon) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`;
-  const label = p => p.name || p.brand || CAT[p.category].t;
+  // Names for places OSM left unnamed: brand if it's a real one (not "B"), otherwise
+  // "{kind} · {side} side", plus opening hours when known.
+  const KIND = {
+    gas: "Gas station", coffee: "Café", restroom: "Restroom", ev: "EV charger",
+    food: { fast_food: "Fast food", restaurant: "Restaurant", _: "Restaurant" },
+    lodging: { hotel: "Hotel", motel: "Motel", _: "Lodging" },
+    sight: { attraction: "Attraction", viewpoint: "Viewpoint", museum: "Museum", _: "Sight" },
+    grocery: { supermarket: "Supermarket", convenience: "Convenience store", _: "Store" },
+  };
+  const goodBrand = b => (typeof b === "string" && b.trim().length > 1 && /[\p{L}\p{N}]/u.test(b)) ? b.trim() : null; // "76", "A&W" ok; "B" not
+  const kindName = p => { const k = KIND[p.category]; return typeof k === "string" ? k : (k && (k[p.kind] || k._)) || CAT[p.category].t; };
+  const hoursText = o => o === "24/7" ? "Open 24/7" : o;
+  const isAnon = p => !p.name && !goodBrand(p.brand);
+  const label = p => p.name || goodBrand(p.brand) ||
+    [kindName(p), p.side && SIDE[p.side], p.opening_hours && hoursText(p.opening_hours)].filter(Boolean).join(" · ");
   const exitTitle = e => e.ref ? `Exit ${e.ref}` : (e.name || "Exit");
   const has = (e, cat) => e.places.some(p => p.category === cat) || (cat === "restroom" && e.badges && e.badges.some(b => b.k === "rest"));
 
@@ -93,24 +123,58 @@
   }
   function nextIndex(x) { const i = NX.list.findIndex(e => e.x > x + 0.1); return i; }
 
-  async function maybeStartGPS(ask) {
-    if (NX.watch != null || !navigator.geolocation) return;
-    if (!ask) {
-      try {
-        if (!navigator.permissions) return;
-        const st = await navigator.permissions.query({ name: "geolocation" });
-        if (st.state !== "granted") return;
-      } catch (e) { return; }
-    }
+  /* GPS, easy on the battery:
+     - never prompts by itself; watches only once location is allowed (or the user taps "Use my location")
+     - high accuracy only while the panel or drive mode is open, or for 10 minutes after the pill is tapped;
+       otherwise a low-accuracy watch that accepts fixes up to a minute old
+     - stops while the page is hidden and resumes when it's visible again (if still allowed) */
+  function wantHigh() { return NX.open || (typeof DRV !== "undefined" && DRV.on) || Date.now() - NX.tapAt < TAP_WINDOW_MS; }
+  async function permitted() {
+    try {
+      if (!navigator.permissions) return NX.allowed;
+      const st = await navigator.permissions.query({ name: "geolocation" });
+      return st.state === "granted";
+    } catch (e) { return NX.allowed; }
+  }
+  function stopWatch() {
+    if (NX.watch != null) navigator.geolocation.clearWatch(NX.watch);
+    NX.watch = null; NX.watchHi = null;
+  }
+  function startWatch() {
+    if (!navigator.geolocation || document.hidden) return;
+    const hi = wantHigh();
+    if (NX.watch != null && NX.watchHi === hi) return;
+    stopWatch();
+    NX.watchHi = hi;
     NX.watch = navigator.geolocation.watchPosition(p => {
+      NX.allowed = true;
       const r = gFromLatLon(p.coords.latitude, p.coords.longitude);
       NX.gps = { g: r.g, d: r.d, t: Date.now(), speed: p.coords.speed, lat: p.coords.latitude, lon: p.coords.longitude };
       refresh();
     }, err => {
-      if (ask) setMsg(err.code === 1 ? "Location permission was denied." : "Couldn't get a GPS fix.");
-      if (err.code === 1) { navigator.geolocation.clearWatch(NX.watch); NX.watch = null; }
-    }, { enableHighAccuracy: true, maximumAge: 15000, timeout: 30000 });
+      if (NX.ask) setMsg(err.code === 1 ? "Location permission was denied." : "Couldn't get a GPS fix.");
+      if (err.code === 1) { NX.allowed = false; stopWatch(); }
+    }, hi ? { enableHighAccuracy: true, maximumAge: 15000, timeout: 30000 }
+          : { enableHighAccuracy: false, maximumAge: 60000, timeout: 120000 });
   }
+  async function maybeStartGPS(ask) {
+    if (!navigator.geolocation) return;
+    NX.ask = !!ask;
+    if (!ask && !(await permitted())) return;
+    startWatch();
+  }
+  // Switch between high and low accuracy when the reason for high accuracy starts or ends.
+  function retuneGPS() { if (NX.watch != null) startWatch(); }
+  function notePillTap() {
+    NX.tapAt = Date.now();
+    clearTimeout(NX.tapTimer);
+    NX.tapTimer = setTimeout(retuneGPS, TAP_WINDOW_MS + 1000);
+    retuneGPS();
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { if (NX.watch != null) { stopWatch(); NX.paused = true; } }
+    else if (NX.paused) { NX.paused = false; maybeStartGPS(false); }
+  });
   function setMsg(t) { const m = q("#nx-msg"); if (m) m.textContent = t; }
 
   /* ---------- driver / passenger ---------- */
@@ -124,8 +188,8 @@
     const g = e.places.filter(p => p.category === "gas");
     if (!g.length) return null;
     const seen = new Set(), names = [];
-    g.filter(p => p.brand || p.name).forEach(p => { const n = p.brand || p.name; if (!seen.has(n)) { seen.add(n); names.push({ n, side: p.side }); } });
-    if (!names.length) names.push({ n: "Gas", side: g[0].side });
+    g.filter(p => !isAnon(p)).forEach(p => { const n = goodBrand(p.brand) || p.name; if (!seen.has(n)) { seen.add(n); names.push({ n, side: p.side }); } });
+    if (!names.length) names.push({ n: "Gas station", side: g[0].side });
     return names.slice(0, 2);
   }
   function foodHighlight(e) { const f = e.places.find(p => p.category === "food"); return f ? label(f) : null; }
@@ -138,17 +202,40 @@
     const when = dist == null ? "" : dist < 0.3 ? " now" : ` in ${dist < 0.95 ? dist.toFixed(1) : Math.round(dist)} mile${Math.round(dist) === 1 ? "" : "s"}`;
     return `${name}${when}: ${parts.length ? parts.join(", ") : "no services"}.`;
   }
+  /* "Next gas": one rule shared by the tank tip and the Next gas button, so they always agree.
+     From position x (local miles, which already increase in the travel direction R.dir), take
+     the nearer of
+       (a) the first exit ahead with at least one OSM gas place, and
+       (b) the first of the app's own fuel stops ahead (R.stops with cat costco/fuel).
+     A fuel stop within 1 mi of that exit counts as the same stop (it's named, e.g.
+     "Costco Woodland (Exit 537)"). Distance is measured along the route: target − x.
+     The button jumps to the exit (for an app stop: the exit nearest to it, within 2 mi). */
+  function nextGas(x = here().x) {
+    const exit = NX.list.find(e => e.x > x + 0.1 && has(e, "gas")) || null;
+    const stop = (R.stops || []).filter(s => (s.cat === "costco" || s.cat === "fuel") && s.local > x + 0.1)
+      .sort((a, b) => a.local - b.local)[0] || null;
+    if (!exit && !stop) return null;
+    if (stop && (!exit || stop.local < exit.x - 1)) {
+      const near = NX.list.filter(e => Math.abs(e.x - stop.local) <= 2)
+        .sort((a, b) => Math.abs(a.x - stop.local) - Math.abs(b.x - stop.local))[0] || null;
+      return { dist: stop.local - x, label: stop.name, exit: near };
+    }
+    const same = stop && Math.abs(stop.local - exit.x) <= 1 ? stop.name : null;
+    return { dist: exit.x - x, label: same ? `${same} (${exitTitle(exit)})` : exitTitle(exit), exit };
+  }
+  function nextGasText(ng) { return ng ? `Next gas: ${ng.label}, ${fmtMi(ng.dist)}.` : "No more gas on the route."; }
+
   function fuelTip(e) {
     if (!FUEL || typeof FUEL.tankAt !== "function") return "";
     const tank = Math.max(0, FUEL.tankAt(e.x)), range = Math.max(0, (tank - RESERVE) * S.mpg);
-    const i = NX.list.indexOf(e), nextGas = NX.list.slice(i + 1).find(o => has(o, "gas"));
-    const gap = nextGas ? nextGas.x - e.x : null;
-    const tk = `Tank ≈${Math.round(tank)} gal`;
-    if (has(e, "gas")) {
-      if (tank < TANK * 0.35 || (gap != null && range < gap + 15)) return `${tk}: fill here${gap != null ? `. Next gas in ${Math.round(gap)} mi.` : "."}`;
-      return `${tk} (≈${Math.round(range)} mi of range): no need to stop.`;
-    }
-    return gap != null ? `${tk}. Next gas in ${Math.round(gap)} mi.` : `${tk}. No more gas on the route.`;
+    // whether to fill at *this* exit depends on the gap to the gas after it
+    const i = NX.list.indexOf(e), after = NX.list.slice(i + 1).find(o => has(o, "gas"));
+    const gap = after ? after.x - e.x : null;
+    const tk = `Tank at this exit ≈${Math.round(tank)} gal`;
+    const verdict = !has(e, "gas") ? `${tk}.`
+      : (tank < TANK * 0.35 || (gap != null && range < gap + 15)) ? `${tk}: fill here.`
+      : `${tk} (≈${Math.round(range)} mi of range): no need to stop.`;
+    return `${verdict} ${nextGasText(nextGas())}`;
   }
 
   /* ---------- DOM ---------- */
@@ -156,7 +243,7 @@
     if (NX.built) return; NX.built = true;
     const pill = document.createElement("button");
     pill.type = "button"; pill.id = "nx-pill"; pill.className = "nx-pill"; pill.hidden = true;
-    pill.addEventListener("click", () => openPanel());
+    pill.addEventListener("click", () => { notePillTap(); openPanel(); });
     document.body.appendChild(pill);
 
     const back = document.createElement("div"); back.className = "nx-back"; back.hidden = true;
@@ -239,6 +326,7 @@
     NX.open = true;
     q("#nx-panel").hidden = false; q(".nx-back").hidden = false;
     document.body.classList.add("nx-open");
+    retuneGPS();
     renderPanel();
     requestAnimationFrame(() => { const p = q("#nx-panel"); (p.querySelector(".nx-sign") || p).focus(); });
   }
@@ -247,6 +335,7 @@
     NX.open = false; NX.mode = null; // manual driver/passenger choice lasts until the panel closes
     q("#nx-panel").hidden = true; q(".nx-back").hidden = true;
     document.body.classList.remove("nx-open");
+    retuneGPS();
     setMsg("");
     const f = NX.lastFocus; NX.lastFocus = null;
     if (f && document.contains(f) && f.offsetParent !== null) f.focus();
@@ -259,13 +348,15 @@
     NX.sel = n; renderPanel();
     const s = q("#nx-panel .nx-sign"); if (s) s.focus();
   }
-  function jumpTarget(cat) {
-    const pos = here(), sel = NX.list[NX.sel];
-    const cands = NX.list.filter(e => e.x > pos.x + 0.1 && has(withBadges(e), cat));
-    if (!cands.length) return null;
-    if (sel && cands.includes(sel)) return cands[cands.indexOf(sel) + 1] || null;
-    return cands.find(e => !sel || e.x > sel.x) || cands[0];
+  // Jump targets are measured from the current position, like the tank tip, so the button's
+  // distance and the tip's "Next gas" always match. Gas uses the shared nextGas() rule.
+  function jumpInfo(cat) {
+    const pos = here();
+    if (cat === "gas") { const ng = nextGas(pos.x); return ng ? { exit: ng.exit, dist: ng.dist } : null; }
+    const e = NX.list.find(o => o.x > pos.x + 0.1 && has(withBadges(o), cat));
+    return e ? { exit: e, dist: e.x - pos.x } : null;
   }
+  function jumpTarget(cat) { const j = jumpInfo(cat); return j && j.exit; }
   function jump(cat) {
     const t = jumpTarget(cat);
     if (!t) { setMsg(`No more ${CAT[cat].t.toLowerCase()} ahead on this trip.`); return; }
@@ -292,16 +383,16 @@
     const g = gasHighlight(e), f = foodHighlight(e), r = has(e, "restroom");
     const nextEx = NX.list[NX.sel + 1];
     const rows = [
-      `<li><span class="nx-i" aria-hidden="true">⛽</span>${g ? g.map(o => `${h(o.n)}${o.side ? ` <small>(${o.side})</small>` : ""}`).join(", ") : "No gas"}</li>`,
-      `<li><span class="nx-i" aria-hidden="true">🍔</span>${f ? h(f) : "No food"}</li>`,
-      `<li><span class="nx-i" aria-hidden="true">🚻</span>${r ? "Restrooms" : "No restrooms"}</li>`,
+      `<li><span class="nx-i">${icon("gas")}</span><span class="nx-hlt">${g ? g.map(o => `${h(o.n)}${o.side ? ` <small>(${o.side})</small>` : ""}`).join(", ") : "No gas"}</span></li>`,
+      `<li><span class="nx-i">${icon("food")}</span><span class="nx-hlt">${f ? h(f) : "No food"}</span></li>`,
+      `<li><span class="nx-i">${icon("restroom")}</span><span class="nx-hlt">${r ? "Restrooms" : "No restrooms"}</span></li>`,
     ];
     const none = !e.places.length && !e.badges.length;
     return `${none ? `<p class="nx-none">No services at this exit.</p>` : `<ul class="nx-hl">${rows.join("")}</ul>`}
       <div class="nx-big">
-        <a class="nx-btn go" href="${nav(e.lat, e.lon)}" target="_blank" rel="noopener">Navigate</a>
+        <a class="nx-btn go" href="${nav(e.lat, e.lon)}" target="_blank" rel="noopener">${icon("nav")}<span>Navigate</span></a>
         <button type="button" class="nx-btn" data-step="1" ${nextEx ? "" : "disabled"}>Next ›</button>
-        <button type="button" class="nx-btn say" data-say aria-label="Read this exit aloud">🔊</button>
+        <button type="button" class="nx-btn say" data-say aria-label="Read this exit aloud">${icon("speak")}</button>
       </div>`;
   }
 
@@ -309,13 +400,13 @@
     const badges = e.badges.map(b => `<li class="nx-b ${h(b.k)}"><b>${h(b.t)}</b>${b.k !== "story" && b.d ? ` <span>${h(b.d)}</span>` : ""}${b.k === "story" ? `<p>${h(b.d)}</p>` : ""}</li>`).join("");
     const tip = fuelTip(e);
     const jumps = JUMPS.map(([cat, t]) => {
-      const tg = jumpTarget(cat);
-      return `<button type="button" data-jump="${cat}" ${tg ? "" : "aria-disabled=\"true\""}>${t}<small>${tg ? fmtMi(tg.x - pos.x) : "none"}</small></button>`;
+      const j = jumpInfo(cat), on = j && j.exit && NX.list.indexOf(j.exit) === NX.sel;
+      return `<button type="button" data-jump="${cat}" ${j && j.exit ? "" : "aria-disabled=\"true\""}${on ? " aria-current=\"true\"" : ""}><span class="nx-jt">${icon(cat)}${t}</span><small>${j ? fmtMi(j.dist) : "none"}</small></button>`;
     }).join("");
     let rows = "";
-    CATS.forEach(([cat, t, icon]) => {
+    CATS.forEach(([cat, t]) => {
       const ps = e.places.filter(p => p.category === cat); if (!ps.length) return;
-      rows += `<section class="nx-cat"><h3><span aria-hidden="true">${icon}</span> ${t} <small>${ps.length}</small></h3><ul>${ps.map(p => place(p)).join("")}</ul></section>`;
+      rows += `<section class="nx-cat"><h3>${icon(cat)} ${t} <small>${ps.length}</small></h3><ul>${ps.map(p => place(p)).join("")}</ul></section>`;
     });
     const gpsBtn = pos.src !== "gps" && navigator.geolocation ? `<button type="button" class="nx-link" data-gps>Use my location</button>` : "";
     return `${badges ? `<ul class="nx-badges">${badges}</ul>` : ""}
@@ -327,11 +418,12 @@
 
   function place(p) {
     const sub = [];
-    if (p.brand && p.name && p.brand !== p.name) sub.push(h(p.brand));
+    const anon = isAnon(p), brand = goodBrand(p.brand);
+    if (brand && p.name && brand !== p.name) sub.push(h(brand));
     sub.push(`${fmtMi(p.dist)} from exit`);
-    if (p.side) sub.push(SIDE[p.side] || p.side);
+    if (p.side && !anon) sub.push(SIDE[p.side] || p.side); // unnamed places already say the side
     if (p.diesel === "yes") sub.push("diesel");
-    const hours = p.opening_hours ? `<span class="nx-hours">${h(p.opening_hours === "24/7" ? "Open 24/7" : p.opening_hours)}</span>` : "";
+    const hours = p.opening_hours && !anon ? `<span class="nx-hours">${h(hoursText(p.opening_hours))}</span>` : "";
     let links = `<a href="${nav(p.lat, p.lon)}" target="_blank" rel="noopener" aria-label="Directions to ${h(label(p))}">Map</a>`;
     if (p.category === "gas") {
       links += `<a href="https://www.gasbuddy.com/home?search=${encodeURIComponent(`${p.lat},${p.lon}`)}&fuel=1" target="_blank" rel="noopener" aria-label="Check price on GasBuddy">GasBuddy</a><a href="https://www.google.com/maps/search/gas+prices/@${p.lat},${p.lon},15z" target="_blank" rel="noopener" aria-label="Check gas prices on Google Maps">Prices</a>`;
@@ -359,11 +451,11 @@
     if (!e) { card.hidden = true; return; }
     card.hidden = false; card.dataset.i = i;
     const d = e.x - pos.x, g = gasHighlight(e), f = foodHighlight(e), r = has(e, "restroom");
-    const hl = [g ? "⛽ " + g.map(o => o.n).join(", ") : "", f ? "🍔 " + f : "", r ? "🚻 Restrooms" : ""].filter(Boolean);
+    const hl = [g ? icon("gas") + h(g.map(o => o.n).join(", ")) : "", f ? icon("food") + h(f) : "", r ? icon("restroom") + "Restrooms" : ""].filter(Boolean);
     card.innerHTML = `<button type="button" class="nx-dv-main" data-nxopen aria-label="${h(exitTitle(e))}, ${fmtMi(d)}. Open exit details.">
         <span class="nx-dv-sign"><small>NEXT EXIT</small><b>${h(e.ref || "—")}</b></span>
-        <span class="nx-dv-txt"><b>${fmtMi(d)} · ${fmtMin(d)}</b><span>${h(e.name || "")}</span><span class="nx-dv-hl">${hl.length ? h(hl.join(" · ")) : "No services"}</span></span>
-      </button><button type="button" class="nx-dv-say" data-nxsay aria-label="Read the next exit aloud">🔊</button>`;
+        <span class="nx-dv-txt"><b>${fmtMi(d)} · ${fmtMin(d)}</b><span>${h(e.name || "")}</span><span class="nx-dv-hl">${hl.length ? hl.map(x => `<span>${x}</span>`).join("") : "No services"}</span></span>
+      </button><button type="button" class="nx-dv-say" data-nxsay aria-label="Read the next exit aloud">${icon("speak")}</button>`;
   }
 
   /* ---------- hook into the app ---------- */
@@ -377,9 +469,9 @@
   const _driveAt = driveAt;
   driveAt = function (x, pos) { _driveAt(x, pos); try { renderDrive(x); } catch (e) { console.warn("Next Exit:", e); } };
   const _openDrive = openDrive;
-  openDrive = async function (...a) { const r = await _openDrive.apply(this, a); try { renderPill(); renderDrive(DRV.x); } catch (e) { console.warn("Next Exit:", e); } return r; };
+  openDrive = async function (...a) { const r = await _openDrive.apply(this, a); try { retuneGPS(); renderPill(); renderDrive(DRV.x); } catch (e) { console.warn("Next Exit:", e); } return r; };
   const _closeDrive = closeDrive;
-  closeDrive = function (...a) { const r = _closeDrive.apply(this, a); try { refresh(); } catch (e) { } return r; };
+  closeDrive = function (...a) { const r = _closeDrive.apply(this, a); try { retuneGPS(); refresh(); } catch (e) { } return r; };
   wrap("rebuild", refresh);
   wrap("applyMDay", () => { if (!NX.open) renderPill(); });
   wrap("selectDay", () => { if (!NX.open) renderPill(); });
