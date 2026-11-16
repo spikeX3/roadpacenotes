@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Densifies ROUTE in index.html with real freeway geometry from OpenStreetMap
+// Densifies ROUTE in js/app.js with real freeway geometry from OpenStreetMap
 // (Overpass API). Node 20+, no dependencies.
 //
-//   node scripts/densify-route.mjs            # rewrites the ROUTE line in index.html
+//   node scripts/densify-route.mjs            # rewrites the ROUTE line in js/app.js
 //   node scripts/densify-route.mjs --dry-run  # report only
 //   OVERPASS_CACHE=.overpass-cache node scripts/densify-route.mjs   # reuse saved responses
 //   DEBUG_PATHS=paths.json ...                   # also dump the raw road path per anchor pair
@@ -236,9 +236,9 @@ async function main() {
   const far = report.filter(r => r.offRoadMi > SNAP_ANCHOR_MI); if (far.length) console.warn(`Anchors left in place (> ${SNAP_ANCHOR_MI} mi from the road): ${far.map(r => r.mile).join(", ")}`);
 
   if (process.env.DEBUG_PATHS) await (await import("node:fs/promises")).writeFile(process.env.DEBUG_PATHS, JSON.stringify(pairs.map(p => ({ a: p.A[2], b: p.B[2], path: p.path }))));
-  if (DRY) { console.log("Dry run: index.html not changed."); return; }
+  if (DRY) { console.log("Dry run: js/app.js not changed."); return; }
   await writeRoute(dense);
-  console.log(`Wrote ROUTE (${dense.length} points) to index.html`);
+  console.log(`Wrote ROUTE (${dense.length} points) to js/app.js`);
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

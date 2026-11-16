@@ -40,11 +40,11 @@ node scripts/build-exits.mjs
 
 Needs Node 20 or newer and network access; no `npm install`. It asks the [Overpass API](https://overpass-api.de/) for motorway exits on I-210 / I-5 / I-205 / I-84 along the route and the places around each one, then writes `data/exits.json`. It's polite to the shared server (one request at a time, pauses and retries), so a run takes several minutes. Set `OVERPASS_URL` to use a different Overpass instance.
 
-Both scripts read `ROUTE` from `index.html`. To refine the route line itself:
+Both scripts read `ROUTE` from `js/app.js`. To refine the route line itself:
 
 ```sh
 node scripts/densify-route.mjs --dry-run   # report only
-node scripts/densify-route.mjs             # rewrite the ROUTE line in index.html
+node scripts/densify-route.mjs             # rewrite the ROUTE line in js/app.js
 ```
 
 The 42 original points (whole-number miles) are anchors and keep their miles exactly; everything in the app (stops, camps, passes, stories, the planner) is keyed to those miles. Points in between get miles in proportion to road distance. Rebuild the exit data afterwards. Set `OVERPASS_CACHE=.overpass-cache` to save responses and reuse them on later runs.
@@ -59,19 +59,25 @@ Exit and place data © [OpenStreetMap contributors](https://www.openstreetmap.or
 
 | File | Purpose |
 |---|---|
-| `index.html` | The whole app: HTML, CSS and JavaScript in one file |
+| `index.html` | Page markup; loads the stylesheets and scripts below in order |
+| `css/app.css` | App styles |
+| `js/app.js` | Core data (including `ROUTE`), planner and UI |
+| `js/features.js` | Passes, kitchen, drive mode, phone layout, live weather and other features |
+| `js/bg.js` | Animated road-trip background |
+| `js/spot-status.js`, `css/spot-status.css` | Warnings for closed or uncertain sleep spots (`SPOT_STATUS`) |
 | `CNAME` | Tells GitHub Pages to serve the site at roadpacenotes.com |
 | `.nojekyll` | Serves files as-is (no Jekyll processing) |
 | `js/nextexit.js`, `css/nextexit.css` | Next Exit button, panel and drive-mode card |
 | `data/exits.json` | Exits and nearby places, built from OpenStreetMap |
 | `scripts/build-exits.mjs` | Builds `data/exits.json` (Node 20, no dependencies) |
-| `scripts/densify-route.mjs` | Rebuilds the `ROUTE` line in `index.html` from OpenStreetMap freeway geometry |
+| `scripts/densify-route.mjs` | Rebuilds the `ROUTE` line in `js/app.js` from OpenStreetMap freeway geometry |
 | `scripts/lib/route.mjs` | Shared ROUTE parser, route math and Overpass client for the scripts |
 | `.github/workflows/build-exits.yml` | Monthly rebuild of the exit data |
 
+The scripts are plain classic scripts (no modules, `defer` or `async`) that share each other's top-level names, so keep them in the order `index.html` loads them.
+
 ## Roadmap
 
-- Split `index.html` into separate CSS / JS / data files.
 - Southbound (return trip) data.
 
 ## Notes
