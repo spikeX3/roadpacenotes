@@ -94,7 +94,12 @@
       R.stops.filter(s => s.cat === "costco" && near(s.g)).forEach(s => {
         const px = FILLPRICE[s.name]; out.push({ k: "costco", t: px ? `Costco gas $${px.toFixed(2)}` : "Costco gas", d: s.name });
       });
-      R.spots.filter(s => s.cat === "truck" && near(s.g)).forEach(s => out.push({ k: "rest", t: "Rest area", d: SPOTS[s.id][3] }));
+      R.spots.filter(s => s.cat === "truck" && near(s.g)).forEach(s => {
+        // A rest area that may be closed (SPOT_STATUS, js/spot-status.js) gets a warning and
+        // doesn't count as "restrooms" (has() only counts k === "rest").
+        const st = typeof SPOT_STATUS !== "undefined" ? SPOT_STATUS[s.id] : null;
+        out.push(st ? { k: "rest closed", t: "Rest area · may be closed", d: SPOTS[s.id][3], warn: s.id } : { k: "rest", t: "Rest area", d: SPOTS[s.id][3] });
+      });
       const i = dayOf(e.x), d = PLAN[i];
       if (d && d.spot && near(SPOTS[d.spot][1])) out.push({ k: "camp", t: "Tonight's stop", d: shortName(d.spot) });
       PASSES.filter(p => R.inR(p.g) && near(p.g)).forEach(p => {
@@ -397,7 +402,7 @@
   }
 
   function passengerView(e, pos, srcNote) {
-    const badges = e.badges.map(b => `<li class="nx-b ${h(b.k)}"><b>${h(b.t)}</b>${b.k !== "story" && b.d ? ` <span>${h(b.d)}</span>` : ""}${b.k === "story" ? `<p>${h(b.d)}</p>` : ""}</li>`).join("");
+    const badges = e.badges.map(b => `<li class="nx-b ${h(b.k)}"><b>${h(b.t)}</b>${b.k !== "story" && b.d ? ` <span>${h(b.d)}</span>` : ""}${b.k === "story" ? `<p>${h(b.d)}</p>` : ""}${b.warn && typeof spotWarnHTML === "function" ? spotWarnHTML(b.warn) : ""}</li>`).join("");
     const tip = fuelTip(e);
     const jumps = JUMPS.map(([cat, t]) => {
       const j = jumpInfo(cat), on = j && j.exit && NX.list.indexOf(j.exit) === NX.sel;
