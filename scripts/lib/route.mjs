@@ -1,15 +1,15 @@
-// Shared helpers for the build scripts: read/write the ROUTE line in index.html,
+// Shared helpers for the build scripts: read/write the ROUTE line in js/app.js,
 // the app's geometry functions, and a polite Overpass client.
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-export const INDEX = join(ROOT, "index.html");
+export const ROUTE_FILE = join(ROOT, "js", "app.js"); // holds the `const ROUTE=[[...]];` line
 const ROUTE_RE = /^const ROUTE=(\[\[.*\]\]);\r?$/m;
 
 /** ROUTE as [[lat, lon, mile], ...], parsed from the single `const ROUTE=[...]` line. */
-export async function readRoute(file = INDEX) {
+export async function readRoute(file = ROUTE_FILE) {
   const html = await readFile(file, "utf8");
   const m = ROUTE_RE.exec(html);
   if (!m) throw new Error(`No "const ROUTE=[[...]];" line found in ${file}`);
@@ -19,8 +19,8 @@ export async function readRoute(file = INDEX) {
   return route;
 }
 
-/** Replace only the ROUTE line in index.html (line endings and everything else untouched). */
-export async function writeRoute(route, file = INDEX) {
+/** Replace only the ROUTE line in js/app.js (line endings and everything else untouched). */
+export async function writeRoute(route, file = ROUTE_FILE) {
   const html = await readFile(file, "utf8");
   if (!ROUTE_RE.test(html)) throw new Error("ROUTE line not found");
   const line = "const ROUTE=" + JSON.stringify(route) + ";";
@@ -28,7 +28,7 @@ export async function writeRoute(route, file = INDEX) {
   await writeFile(file, out);
 }
 
-/** Same math as gFromLatLon in index.html; also returns the segment index. */
+/** Same math as gFromLatLon in js/app.js; also returns the segment index. */
 export function gFromLatLon(route, lat, lon) {
   const c = Math.cos(lat * Math.PI / 180);
   let best = { d: 1e9, g: 0, i: 1 };
@@ -43,7 +43,7 @@ export function gFromLatLon(route, lat, lon) {
   return best;
 }
 
-/** Same as routeAt in index.html. */
+/** Same as routeAt in js/app.js. */
 export function routeAt(route, g) {
   const last = route[route.length - 1];
   g = Math.max(route[0][2], Math.min(last[2], g));

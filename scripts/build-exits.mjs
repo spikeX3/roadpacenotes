@@ -3,10 +3,11 @@
 // (Overpass API). Node 20+, no dependencies.
 //
 //   node scripts/build-exits.mjs            # writes data/exits.json
+//   node scripts/build-exits.mjs --dry-run  # check the route and corridor boxes; no network
 //   OVERPASS_URL=https://... node scripts/build-exits.mjs
 //   OVERPASS_CACHE=.overpass-cache node scripts/build-exits.mjs   # save/reuse raw responses
 //
-// Reads ROUTE from index.html, so run scripts/densify-route.mjs first if the route changes.
+// Reads ROUTE from js/app.js, so run scripts/densify-route.mjs first if the route changes.
 //
 // Data © OpenStreetMap contributors, available under the ODbL.
 
@@ -16,7 +17,7 @@ import { ROOT, readRoute, gFromLatLon as project, miles, overpass, sleep } from 
 
 const OUT = join(ROOT, "data", "exits.json");
 
-// [lat, lon, global mile] read from index.html; 0 = Ontario CA, 1265 = Walla Walla.
+// [lat, lon, global mile] read from js/app.js; 0 = Ontario CA, 1265 = Walla Walla.
 const ROUTE = await readRoute();
 
 const BOXES = 10;          // corridor split
@@ -37,7 +38,7 @@ const LEGS = [
   [1030, 1215, ["I 84"]],           // → US-730 at Umatilla (exit 168)
 ];
 
-// ---------- geometry (same math as gFromLatLon in index.html) ----------
+// ---------- geometry (same math as gFromLatLon in js/app.js) ----------
 const gFromLatLon = (lat, lon) => project(ROUTE, lat, lon);
 // Side of the freeway a place is on, as a compass letter. The route runs N–S for
 // most of the trip (E/W), but east–west through the Columbia Gorge (N/S).
@@ -98,6 +99,13 @@ const allowedAt = g => new Set(LEGS.filter(([a, b]) => g >= a && g <= b).flatMap
 // ---------- main ----------
 async function main() {
   const bbs = boxes();
+  if (process.argv.includes("--dry-run")) {
+    const anchors = ROUTE.filter(p => Number.isInteger(p[2])).length;
+    console.log(`ROUTE from js/app.js: ${ROUTE.length} points (${anchors} anchors), miles ${ROUTE[0][2]}–${ROUTE.at(-1)[2]}`);
+    console.log(`${bbs.length} corridor boxes:`); bbs.forEach((b, k) => console.log(`  ${k + 1}. ${b.join(",")}`));
+    console.log("Dry run: no Overpass requests, data/exits.json not changed.");
+    return;
+  }
   const junctions = new Map(), places = new Map(), nodeFw = new Map();
   for (let k = 0; k < bbs.length; k++) {
     const label = `box ${k + 1}/${bbs.length}`;
