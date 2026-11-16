@@ -580,16 +580,18 @@ function renderDays(){
 function canShorten(d){return R.spots.some(s=>s.local>d.a+15&&s.local<d.b-1)}
 // Try day i's limit in 0.5 h steps (dir +1 longer, -1 shorter) and return the first one where plan() actually
 // moves the day's end ({H, day, name}), or null. Simulates the day without a Plan B stop, as longer/shorter
-// clear it. plan() only reads R and S, and S is restored before returning. Cached on d (PLAN is rebuilt on change).
+// clear it. If the default (S.hours) ends the day at the same place, H is the default, so the day needs no override.
+// plan() only reads R and S, and S is restored before returning. Cached on d (PLAN is rebuilt on change).
 function stepHours(i,d,dir){const k=dir>0?"_up":"_dn";if(k in d)return d[k];
   const has=o=>Object.prototype.hasOwnProperty.call(o,i),hadH=has(S.dayHours),oldH=S.dayHours[i],hadE=has(S.dayEnd),oldE=S.dayEnd[i];let res=null;
   try{delete S.dayEnd[i];for(let H=d.H+dir*0.5;dir>0?H<=16:H>=0.5;H+=dir*0.5){S.dayHours[i]=H;const p=plan()[i];
-    if(p&&(dir>0?p.b>d.b+1:p.b<d.b-1)){res={H,day:p,name:p.spot?shortName(p.spot):R.dest.name};break}}}
+    if(p&&(dir>0?p.b>d.b+1:p.b<d.b-1)){res={H,day:p,name:p.spot?shortName(p.spot):R.dest.name};break}}
+    if(res&&res.H!==S.hours){delete S.dayHours[i];const q=plan()[i];if(q&&q.spot===res.day.spot&&Math.abs(q.b-res.day.b)<0.01)res.H=S.hours}}
   finally{if(hadH)S.dayHours[i]=oldH;else delete S.dayHours[i];if(hadE)S.dayEnd[i]=oldE;else delete S.dayEnd[i]}
   return d[k]=res}
 const canLonger=(i,d)=>!!d.area&&!!stepHours(i,d,1);
-function shorter(i,d){if(!canShorten(d))return;const r=stepHours(i,d,-1);if(!r)return;delete S.dayEnd[i];store.set("dayEnd",S.dayEnd);setDayHours(i,r.H)}
-function longer(i,d){if(!d.area)return;const r=stepHours(i,d,1);if(!r)return;delete S.dayEnd[i];store.set("dayEnd",S.dayEnd);setDayHours(i,r.H)}
+function shorter(i,d){if(!canShorten(d))return;const r=stepHours(i,d,-1);if(!r)return;delete S.dayEnd[i];store.set("dayEnd",S.dayEnd);if(r.H===S.hours){delete S.dayHours[i];store.set("dayHours",S.dayHours);rebuild()}else setDayHours(i,r.H)}
+function longer(i,d){if(!d.area)return;const r=stepHours(i,d,1);if(!r)return;delete S.dayEnd[i];store.set("dayEnd",S.dayEnd);if(r.H===S.hours){delete S.dayHours[i];store.set("dayHours",S.dayHours);rebuild()}else setDayHours(i,r.H)}
 function setDayHours(i,v){v=Math.min(16,Math.max(0.5,Math.round(v*2)/2));if(v===S.hours)delete S.dayHours[i];else S.dayHours[i]=v;store.set("dayHours",S.dayHours);rebuild()}
 function refocus(id){const e=document.getElementById(id);if(e)e.focus({preventScroll:true})}
 const ETA={};
