@@ -392,7 +392,15 @@ function buildStatic(){
   mpg.addEventListener("input",()=>{S.mpg=+mpg.value;o.textContent=S.mpg+" mpg";store.set("mpg",S.mpg);refreshLight()});
   const hr=$("#hours"),ho=$("#hours-o");hr.value=S.hours;
   const syncH=()=>{ho.textContent=S.straight?"straight shot":`${S.hours} h / day`;hr.disabled=S.straight;$("#straight").setAttribute("aria-pressed",S.straight)};syncH();
-  hr.addEventListener("input",()=>{S.hours=+hr.value;store.set("hours",S.hours);syncH();rebuild()});
+  // A new default replaces per-day limits (not Plan B / "Sleep here" stops in S.dayEnd); offer to undo that.
+  let hoursUndo=null;const lm=$("#leavemsg");
+  hr.addEventListener("input",()=>{const prev=S.hours;S.hours=+hr.value;store.set("hours",S.hours);
+    if(Object.keys(S.dayHours).length){hoursUndo={hours:prev,dayHours:{...S.dayHours}};S.dayHours={};store.set("dayHours",{});
+      lm.innerHTML=`Per-day changes were reset to the new default. <a href="#" id="hours-undo">Undo</a>`}
+    syncH();rebuild()});
+  lm.addEventListener("click",e=>{if(!e.target.closest("#hours-undo")||!hoursUndo)return;e.preventDefault();
+    S.hours=hoursUndo.hours;S.dayHours=hoursUndo.dayHours;hoursUndo=null;store.set("hours",S.hours);store.set("dayHours",S.dayHours);
+    hr.value=S.hours;lm.textContent="";syncH();rebuild()});
   $("#resetdays").addEventListener("click",()=>{S.dayHours={};S.dayEnd={};store.set("dayHours",{});store.set("dayEnd",{});rebuild()});
   $("#straight").addEventListener("click",()=>{S.straight=!S.straight;store.set("straight",S.straight);syncH();rebuild()});
   segButtons($("#gas-seg"),Object.entries(GAS).map(([k,g])=>({k,t:g.t,sub:`$${g.ca.toFixed(2)} CA · $${g.or.toFixed(2)} OR`})),S.gas,k=>{S.gas=k;store.set("gas",k);recalc()});
