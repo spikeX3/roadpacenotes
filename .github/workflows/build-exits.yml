@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pages: write   # to request a Pages rebuild after pushing new data
 
 concurrency:
   group: build-exits
@@ -27,6 +28,7 @@ jobs:
         run: node scripts/build-exits.mjs
 
       - name: Commit if changed
+        id: commit
         run: |
           # Ignore the timestamp-only change that every run produces.
           if git diff --quiet -- data/exits.json; then
@@ -41,3 +43,14 @@ jobs:
           git add data/exits.json
           git commit -m "Update exit data from OpenStreetMap"
           git push
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      # Pushes made with GITHUB_TOKEN don't trigger other workflows, so ask Pages to
+      # rebuild explicitly. Best effort: never fail the job over this.
+      - name: Request a Pages build
+        if: steps.commit.outputs.pushed == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X POST "repos/${{ github.repository }}/pages/builds" || echo "Pages build request failed (ignored)."

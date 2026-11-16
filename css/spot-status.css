@@ -1,0 +1,11 @@
+/* Road Pace Notes · warnings for closed or uncertain sleep spots (js/spot-status.js) */
+.spotwarn{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;margin:6px 0;padding:7px 10px;border-left:4px solid var(--warn,#c2410c);border-radius:0 8px 8px 0;background:color-mix(in srgb,var(--warn,#c2410c) 12%,var(--card));color:var(--ink);font-size:.86rem;line-height:1.35;flex-basis:100%;max-width:100%;box-sizing:border-box}
+.sw-tag{flex:none;padding:1px 8px;border-radius:999px;background:var(--warn,#c2410c);color:#fff;font:800 .72rem var(--display);letter-spacing:.05em;text-transform:uppercase}
+.sw-note{min-width:0}
+.sw-meta{color:var(--muted);font-size:.8rem}
+.sw-meta a{color:var(--route);font-weight:700}
+button.sw-armed{background:var(--warn,#c2410c)!important;border-color:var(--warn,#c2410c)!important;color:#fff!important}
+/* list styles (e.g. the Tonight chooser's .sl span) must not restyle the warning */
+.spotwarn .sw-tag{color:#fff!important;background:var(--warn,#c2410c)!important;font:800 .72rem var(--display)!important;display:inline-block!important;margin:0!important}
+.spotwarn .sw-note{color:var(--ink)!important;font-size:.86rem!important;display:inline!important;margin:0!important}
+.spotwarn .sw-meta{display:inline!important;margin:0!important}
