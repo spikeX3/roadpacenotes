@@ -3,7 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>I-5 North to Walla Walla</title>
+<title>Road Pace Notes · Ontario → Walla Walla</title>
+<meta name="description" content="Road Pace Notes: your co-driver for the road ahead. Day-by-day road-trip plans, camps and hotels, fuel and costs, and what's at the next exit.">
+<meta property="og:title" content="Road Pace Notes">
+<meta property="og:description" content="Road Pace Notes: your co-driver for the road ahead. Day-by-day road-trip plans, camps and hotels, fuel and costs, and what's at the next exit.">
+<meta property="og:url" content="https://roadpacenotes.com">
+<meta property="og:type" content="website">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f6a46'/%3E%3Cpath d='M14 14 Q32 8 50 14 L50 30 Q50 48 32 56 Q14 48 14 30Z' fill='%23fff'/%3E%3Ctext x='32' y='43' text-anchor='middle' font-family='Arial,sans-serif' font-weight='900' font-size='26' fill='%230f6a46'%3E5%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
@@ -839,6 +845,10 @@ body.m .infobar .ib.sleepch > .seg3,body.m .infobar .ib.sleepch.open > .seg3{dis
 .whyl .ok .wi{background:var(--good)}.whyl .warn .wi{background:#b7791f}.whyl .bad .wi{background:var(--warn)}.whyl .info .wi{background:var(--muted)}
 body.m .infobar .ib.sleepch.open > .whyb{display:block}
 
+/* Road Pace Notes wordmark */
+.wordmark,.mbword{font-family:var(--display);font-weight:800;font-variant-caps:all-small-caps;text-transform:uppercase;letter-spacing:.22em;color:rgba(255,255,255,.85);line-height:1}
+.wordmark{font-size:.8rem;margin:0 0 6px}
+.mbword{font-size:.62rem;margin:0 0 3px}
 </style>
 </head>
 <body>
@@ -859,6 +869,7 @@ body.m .infobar .ib.sleepch.open > .whyb{display:block}
         <span id="shield-dir">NORTH</span>
       </div>
       <div>
+        <div class="wordmark">Road Pace Notes</div>
         <h1 id="title">Ontario, CA to Walla Walla, WA</h1>
         <div class="sub" id="subline"></div>
       </div>
@@ -2188,7 +2199,7 @@ function buildMobileShell(){if(MOB.built)return;MOB.built=true;
   wrap.prepend(mk(`<div id="mviews">
     <section id="v-trip" class="mview" aria-label="Trip">
       <header class="mbar"><svg class="mshield" viewBox="0 0 74 78" aria-hidden="true"><path d="M6 10 Q37 0 68 10 L68 30 Q68 62 37 76 Q6 62 6 30Z" fill="#fff"/><path d="M9 12 Q37 3 65 12 L65 24 L9 24Z" fill="#c8102e"/><path d="M9 27 L65 27 L65 31 Q65 59 37 72 Q9 59 9 31Z" fill="#003f87"/><text x="37" y="61" text-anchor="middle" font-family="Overpass,Arial" font-weight="800" font-size="32" fill="#fff">5</text></svg>
-        <div class="mbt"><div class="mbtitle" id="mb-title"></div><div class="mbsub" id="mb-sub"></div></div>
+        <div class="mbt"><div class="mbword">Road Pace Notes</div><div class="mbtitle" id="mb-title"></div><div class="mbsub" id="mb-sub"></div></div>
         <button type="button" class="mbset" data-sheet="settings" aria-label="Trip settings">${MI.sliders}</button></header>
       <nav class="mdays" id="mdays" aria-label="Pick a day"></nav>
       <div id="m-tripbody"></div>
