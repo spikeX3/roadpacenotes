@@ -152,3 +152,6 @@ vite.config.ts.timestamp-*
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Overpass response cache for scripts/build-exits.mjs
+.overpass-cache/

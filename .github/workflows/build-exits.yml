@@ -1,0 +1,43 @@
+name: Build exit data
+
+on:
+  schedule:
+    - cron: "17 9 3 * *"   # 09:17 UTC on the 3rd of each month
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-exits
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build data/exits.json from OpenStreetMap
+        run: node scripts/build-exits.mjs
+
+      - name: Commit if changed
+        run: |
+          # Ignore the timestamp-only change that every run produces.
+          if git diff --quiet -- data/exits.json; then
+            echo "No change."; exit 0
+          fi
+          if git show HEAD:data/exits.json 2>/dev/null | sed 's/"generated":"[^"]*"//' | \
+               cmp -s - <(sed 's/"generated":"[^"]*"//' data/exits.json); then
+            echo "Only the timestamp changed."; git checkout -- data/exits.json; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898333+github-actions[bot]@users.noreply.github.com"
+          git add data/exits.json
+          git commit -m "Update exit data from OpenStreetMap"
+          git push
