@@ -392,7 +392,15 @@ function buildStatic(){
   mpg.addEventListener("input",()=>{S.mpg=+mpg.value;o.textContent=S.mpg+" mpg";store.set("mpg",S.mpg);refreshLight()});
   const hr=$("#hours"),ho=$("#hours-o");hr.value=S.hours;
   const syncH=()=>{ho.textContent=S.straight?"straight shot":`${S.hours} h / day`;hr.disabled=S.straight;$("#straight").setAttribute("aria-pressed",S.straight)};syncH();
-  hr.addEventListener("input",()=>{S.hours=+hr.value;store.set("hours",S.hours);syncH();rebuild()});
+  // A new default replaces per-day limits (not Plan B / "Sleep here" stops in S.dayEnd); offer to undo that.
+  let hoursUndo=null;const lm=$("#leavemsg");
+  hr.addEventListener("input",()=>{const prev=S.hours;S.hours=+hr.value;store.set("hours",S.hours);
+    if(Object.keys(S.dayHours).length){hoursUndo={hours:prev,dayHours:{...S.dayHours}};S.dayHours={};store.set("dayHours",{});
+      lm.innerHTML=`Per-day changes were reset to the new default. <a href="#" id="hours-undo">Undo</a>`}
+    syncH();rebuild()});
+  lm.addEventListener("click",e=>{if(!e.target.closest("#hours-undo")||!hoursUndo)return;e.preventDefault();
+    S.hours=hoursUndo.hours;S.dayHours=hoursUndo.dayHours;hoursUndo=null;store.set("hours",S.hours);store.set("dayHours",S.dayHours);
+    hr.value=S.hours;lm.textContent="";syncH();rebuild()});
   $("#resetdays").addEventListener("click",()=>{S.dayHours={};S.dayEnd={};store.set("dayHours",{});store.set("dayEnd",{});rebuild()});
   $("#straight").addEventListener("click",()=>{S.straight=!S.straight;store.set("straight",S.straight);syncH();rebuild()});
   segButtons($("#gas-seg"),Object.entries(GAS).map(([k,g])=>({k,t:g.t,sub:`$${g.ca.toFixed(2)} CA · $${g.or.toFixed(2)} OR`})),S.gas,k=>{S.gas=k;store.set("gas",k);recalc()});
@@ -505,7 +513,7 @@ function renderDays(){
     const tStart=FUEL.tankAt(d.a+0.01),tEnd=FUEL.tankAt(d.b);
     sec.innerHTML=`<div class="dayhead"><div class="dnum">DAY ${i+1}<small>${L.dow.toUpperCase()} ${L.date.toUpperCase()}</small></div>
       <div><h2>${esc(a.name)} → ${esc(b.name)}</h2><div class="meta">${Math.round(span)} mi · ≈${hrs(span)} driving${S.straight?"":` of ${d.H} h allowed`}${d.forced?" · Plan B":""}${d.over?` · <b class="warnt">over your limit: no overnight spot closer than this</b>`:""}</div>
-      ${S.straight?"":`<div class="dh" role="group" aria-label="Driving hours for day ${i+1}"><button type="button" class="dhb wide" id="hm${i}" ${canShorten(d)?"":"disabled title=\"No overnight spot earlier in this day\""}>− Shorter</button><output class="dho${S.dayHours[i]!=null?" custom":""}">limit ${d.H} h</output><button type="button" class="dhb wide" id="hp${i}" ${d.area?"":"disabled"}>Longer +</button>${S.dayHours[i]!=null?`<button type="button" class="dhr" id="hr${i}">↺ default</button>`:""}</div>`}</div>
+      ${S.straight?"":`<div class="dh" role="group" aria-label="Driving hours for day ${i+1}"><button type="button" class="dhb wide" id="hm${i}" ${canShorten(d)&&stepHours(i,d,-1)?"":"disabled title=\"No overnight spot earlier in this day\""}>− Shorter</button><output class="dho${S.dayHours[i]!=null?" custom":""}">limit ${d.H} h</output><button type="button" class="dhb wide" id="hp${i}" ${!d.area?"disabled":canLonger(i,d)?"":"disabled title=\"No farther overnight spot\""}>Longer +</button>${S.dayHours[i]!=null?`<button type="button" class="dhr" id="hr${i}">↺ default</button>`:""}</div>`}</div>
       <div class="when"><span class="sunl" id="sun${i}"></span><label for="start${i}">Leave at <input type="time" id="start${i}" value="${S.starts[i]||"07:30"}" step="900"></label><span class="arr" id="arr${i}"></span><span class="whenbtns"><a class="nav" href="${gmaps(i)}" target="_blank" rel="noopener">Open in Google Maps ↗</a><button type="button" class="nav navb" id="ck${i}">Copy check-in text</button></span><span class="ckmsg" id="ckm${i}" aria-live="polite"></span></div></div>
       <div class="strip"></div>
       <div class="infobar">
@@ -570,8 +578,18 @@ function renderDays(){
   if(selId&&!listItems[selId]&&!pinEls[selId])selId=null;if(selId){listItems[selId]?.classList.add("sel");stripMarks[selId]?.classList.add("sel");document.querySelectorAll("[data-show]").forEach(b=>{if(b.dataset.show===selId)b.textContent="Hide on map"})}
 }
 function canShorten(d){return R.spots.some(s=>s.local>d.a+15&&s.local<d.b-1)}
-function shorter(i,d){if(!canShorten(d))return;const drive=(d.b-d.a)/MPH;let v=Math.floor(drive*2)/2;if(v>drive-0.05)v-=0.5;delete S.dayEnd[i];store.set("dayEnd",S.dayEnd);setDayHours(i,Math.max(v,0.5))}
-function longer(i,d){if(!d.area)return;const next=R.spots.filter(s=>s.area!==d.area&&s.local>d.b+1).map(s=>s.local).sort((a,b)=>a-b)[0];const target=Math.min(next??R.T,R.T);delete S.dayEnd[i];store.set("dayEnd",S.dayEnd);setDayHours(i,Math.max(d.H,Math.ceil((target-d.a)/MPH*2)/2))}
+// Try day i's limit in 0.5 h steps (dir +1 longer, -1 shorter) and return the first one where plan() actually
+// moves the day's end ({H, day, name}), or null. Simulates the day without a Plan B stop, as longer/shorter
+// clear it. plan() only reads R and S, and S is restored before returning. Cached on d (PLAN is rebuilt on change).
+function stepHours(i,d,dir){const k=dir>0?"_up":"_dn";if(k in d)return d[k];
+  const has=o=>Object.prototype.hasOwnProperty.call(o,i),hadH=has(S.dayHours),oldH=S.dayHours[i],hadE=has(S.dayEnd),oldE=S.dayEnd[i];let res=null;
+  try{delete S.dayEnd[i];for(let H=d.H+dir*0.5;dir>0?H<=16:H>=0.5;H+=dir*0.5){S.dayHours[i]=H;const p=plan()[i];
+    if(p&&(dir>0?p.b>d.b+1:p.b<d.b-1)){res={H,day:p,name:p.spot?shortName(p.spot):R.dest.name};break}}}
+  finally{if(hadH)S.dayHours[i]=oldH;else delete S.dayHours[i];if(hadE)S.dayEnd[i]=oldE;else delete S.dayEnd[i]}
+  return d[k]=res}
+const canLonger=(i,d)=>!!d.area&&!!stepHours(i,d,1);
+function shorter(i,d){if(!canShorten(d))return;const r=stepHours(i,d,-1);if(!r)return;delete S.dayEnd[i];store.set("dayEnd",S.dayEnd);setDayHours(i,r.H)}
+function longer(i,d){if(!d.area)return;const r=stepHours(i,d,1);if(!r)return;delete S.dayEnd[i];store.set("dayEnd",S.dayEnd);setDayHours(i,r.H)}
 function setDayHours(i,v){v=Math.min(16,Math.max(0.5,Math.round(v*2)/2));if(v===S.hours)delete S.dayHours[i];else S.dayHours[i]=v;store.set("dayHours",S.dayHours);rebuild()}
 function refocus(id){const e=document.getElementById(id);if(e)e.focus({preventScroll:true})}
 const ETA={};

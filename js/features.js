@@ -499,8 +499,9 @@ function restructureHead(sec,i,d){const head=sec.querySelector(".dayhead");if(!h
   chips.innerHTML=`<span class="chip2"><b>${Math.round(span)}</b> mi</span><span class="chip2"><b>≈${hrs(span)}</b> driving</span>${S.straight?"":`<span class="chip2 lim${S.dayHours[i]!=null?" custom":""}">limit <b>${d.H} h</b>${S.dayHours[i]!=null?" (custom)":""}</span>`}${d.forced?`<span class="chip2 pb">Plan B stop</span>`:""}${d.over?`<span class="chip2 bad">Over your limit: no closer overnight spot</span>`:""}`;
   head.innerHTML="";head.append(top,chips);
   if(dh){const hm=dh.querySelector(`#hm${i}`),hp=dh.querySelector(`#hp${i}`),hr=dh.querySelector(`#hr${i}`);
-    hm.className="step minus";hm.innerHTML=`<span class="sg" aria-hidden="true">−</span><span class="st"><b>Shorter day</b><small>${hm.disabled?"no earlier stop":"stop one camp sooner"}</small></span>`;
-    hp.className="step plus";hp.innerHTML=`<span class="st"><b>Longer day</b><small>${hp.disabled?"last day":"reach the next camp"}</small></span><span class="sg" aria-hidden="true">+</span>`;
+    const to=dir=>{const r=stepHours(i,d,dir);return r?`→ ${esc(r.name)}, ${r.H} h`:""};
+    hm.className="step minus";hm.innerHTML=`<span class="sg" aria-hidden="true">−</span><span class="st"><b>Shorter day</b><small>${hm.disabled?"no earlier stop":to(-1)||"stop one camp sooner"}</small></span>`;
+    hp.className="step plus";hp.innerHTML=`<span class="st"><b>Longer day</b><small>${hp.disabled?(d.area?"no farther stop":"last day"):to(1)||"reach the next camp"}</small></span><span class="sg" aria-hidden="true">+</span>`;
     const ctl=document.createElement("div");ctl.className="dh2-ctl";ctl.setAttribute("role","group");ctl.setAttribute("aria-label",`Change how far you drive on day ${i+1}`);
     ctl.innerHTML=`<span class="ctl-l">Adjust today</span>`;ctl.append(hm,hp);if(hr){hr.className="reset2";hr.textContent="↺ Back to default";ctl.append(hr)}head.append(ctl)}
   const tiles=document.createElement("div");tiles.className="dh2-tiles";
